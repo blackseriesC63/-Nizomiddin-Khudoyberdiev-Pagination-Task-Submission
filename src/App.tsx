@@ -1,85 +1,61 @@
-import React, { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createMockPost, fetchMockPosts, getPostById } from './data'
+import React, { useState, useEffect } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { createMockPost, fetchMockPostsPaginated } from "./data";
 
-function usePost(postId: number) {
-  return useQuery({
-    queryKey: ['post', postId],
-    queryFn: () => getPostById(postId),
-    enabled: !!postId,
-  })
-}
-
-const Post = ({
-  postId,
-  setPostId,
-}: {
-  postId: number
-  setPostId: React.Dispatch<React.SetStateAction<number>>
-}) => {
-  const { status, data, error, isFetching } = usePost(postId)
-
-  return (
-    <div>
-      <div>
-        <a onClick={() => setPostId(-1)} href="#">
-          Back
-        </a>
-      </div>
-      {!postId || status === 'pending' ? (
-        'Loading...'
-      ) : status === 'error' ? (
-        <span>Error: {error.message}</span>
-      ) : (
-        <>
-          <h1>{data?.title}</h1>
-          <div>
-            <p>{data?.body}</p>
-          </div>
-          <div>{isFetching ? 'Background Updating...' : ' '}</div>
-        </>
-      )}
-    </div>
-  )
-}
-
-const Posts = ({
-  setPostId,
-}: {
-  setPostId: React.Dispatch<React.SetStateAction<number>>
-}) => {
-  const queryClient = useQueryClient()
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
+const Posts = () => {
+  const queryClient = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const limit = 5;
 
   const {
-    data: posts,
+    data,
     isLoading,
     isError,
-  } = useQuery({ queryKey: ['posts'], queryFn: fetchMockPosts })
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["posts"],
+    queryFn: ({ pageParam = 1 }) => fetchMockPostsPaginated(pageParam, limit),
+    getNextPageParam: (lastPage, pages) => {
+      return lastPage.hasMore ? pages.length + 1 : undefined;
+    },
+    initialPageParam: 1,
+  });
 
   const mutation = useMutation({
     mutationFn: createMockPost,
     onSuccess: () => {
-      // Invalidate and refetch the posts query after a successful mutation
-      queryClient.invalidateQueries({ queryKey: ['posts'] })
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
     },
-  })
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     mutation.mutate({
       title,
       body,
-      userId: 1, // default user ID
+      userId: 1,
       id: Date.now(),
-    })
-    setTitle('')
-    setBody('')
-  }
+    });
+    setTitle("");
+    setBody("");
+  };
 
-  if (isLoading) return <div>Loading...</div>
-  if (isError) return <div>Error loading posts</div>
+  // Load more posts when button is clicked
+  const loadMorePosts = () => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  };
+
+  if (isLoading) return <div>Loading...</div>;
+  if (isError) return <div>Error loading posts</div>;
 
   return (
     <div>
@@ -104,45 +80,37 @@ const Posts = ({
         <button type="submit">Create Post</button>
       </form>
 
-      <ul>
-        {posts?.map((post) => (
-          <li key={post.id}>
-            <a
-              onClick={() => setPostId(post.id)}
-              href="#"
-              style={
-                // We can access the query data here to show bold links for
-                // ones that are cached
-                queryClient.getQueryData(['post', post.id])
-                  ? {
-                      fontWeight: 'bold',
-                      color: 'green',
-                    }
-                  : {}
-              }
-            >
+      {data?.pages.map((page, pageIndex) => (
+        <ul key={pageIndex}>
+          {page.posts.map((post) => (
+            <li key={post.id}>
               <h3>{post.title}</h3>
-            </a>
-            <p>{post.body}</p>
-          </li>
-        ))}
-      </ul>
+              <p>{post.body}</p>
+            </li>
+          ))}
+        </ul>
+      ))}
+
+      {/* Load More Button */}
+      <div>
+        {isFetchingNextPage ? (
+          <p>Loading more...</p>
+        ) : hasNextPage ? (
+          <button onClick={loadMorePosts}>Load More</button>
+        ) : (
+          <p>No more posts to load</p>
+        )}
+      </div>
     </div>
-  )
-}
+  );
+};
 
 const App = () => {
-  const [postId, setPostId] = React.useState(-1)
-
   return (
     <div>
-      {postId > -1 ? (
-        <Post postId={postId} setPostId={setPostId} />
-      ) : (
-        <Posts setPostId={setPostId} />
-      )}
+      <Posts />
     </div>
-  )
-}
+  );
+};
 
-export default App
+export default App;
